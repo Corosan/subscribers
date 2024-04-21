@@ -45,6 +45,8 @@ public:
         return false;
     }
 
+    // Calls every subscription's callback sequentially. Can be called from multiple threads. A lock
+    // is held only for subscription list iteration/manipulation.
     void notify() {
         std::unique_lock l{m_listMutex};
         for (auto &s : m_list) {

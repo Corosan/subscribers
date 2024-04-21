@@ -17,9 +17,9 @@ class subscriber {
         std::function<void()> m_callback;
         const int m_id;
         // ids of threads which currently execute this subscription's callback
-        std::vector<std::thread::id> m_activeCycleThreads;
+        std::vector<std::thread::id> m_active_cycle_threads;
         std::condition_variable m_waiter;
-        bool m_unsubscribeFromCallback = false;
+        bool m_unsubscribe_from_callback = false;
 
         subscription(std::function<void()> c, int id)
             : m_callback(std::move(c)), m_id(id)
@@ -32,8 +32,8 @@ public:
     // comparing arbitrary function objects is not supported.
     int subscribe(std::function<void()> callback) {
         std::lock_guard l{m_listMutex};
-        m_list.emplace_back(std::move(callback), m_nextId);
-        return m_nextId++;
+        m_list.emplace_back(std::move(callback), m_next_subscr_id);
+        return m_next_subscr_id++;
     }
 
     // Returns status whether a subscriber with specified id was really unsubscribed. It's
@@ -45,31 +45,35 @@ public:
         std::unique_lock l{m_listMutex};
         auto it = find_if(m_list.begin(), m_list.end(), [id](auto& v){ return v.m_id == id; });
         if (it != m_list.end()) {
-            auto threadIt = find(it->m_activeCycleThreads.begin(), it->m_activeCycleThreads.end(),
-                std::this_thread::get_id());
-            if (threadIt == it->m_activeCycleThreads.end()) {
+            auto& threads = it->m_active_cycle_threads;
+            auto thread_it = find(threads.begin(), threads.end(), std::this_thread::get_id());
+            if (thread_it == threads.end()) {
                 // Trivial case when the unsubscribe operation is called not from some callback
-                it->m_waiter.wait(l, [&it](){ return it->m_activeCycleThreads.empty(); });
+                it->m_waiter.wait(l, [&it, &threads]{ return threads.empty(); });
                 m_list.erase(it);
                 return true;
             } else {
-                it->m_unsubscribeFromCallback = true;
-                it->m_waiter.wait(l, [&it](){ return it->m_activeCycleThreads.size() <= 1; });
+                // This subscription object will be removed by a notification delivery cycle
+                // eventually, which has originated a call chain yielded to this unsubscribe call.
+                it->m_unsubscribe_from_callback = true;
+                it->m_waiter.wait(l, [&it, &threads]{ return threads.size() <= 1; });
                 return true;
             }
         }
         return false;
     }
 
+    // Calls every subscription's callback sequentially. Can be called from multiple threads. A lock
+    // is held only for subscription list iteration/manipulation.
     void notify() {
         std::list<subscription> garbage;
         std::unique_lock l{m_listMutex};
         for (auto it = m_list.begin(); it != m_list.end(); ) {
-            if (it->m_unsubscribeFromCallback) {
+            if (it->m_unsubscribe_from_callback) {
                 ++it;
                 continue;
             }
-            auto& threads = it->m_activeCycleThreads;
+            auto& threads = it->m_active_cycle_threads;
 
             // It's not a good to touch a heap allocator at this fast delivery cycle. But an
             // allocation inside this container is expected at beginning phase only - the active
@@ -91,9 +95,9 @@ public:
             // If the only thread is registered and a flag about pending unsubscription is set,
             // issue a notification for the only live callback so it can return from the unsubscribe
             // operation.
-            if (threads.empty() || (threads.size() == 1 && it->m_unsubscribeFromCallback))
+            if (threads.empty() || (threads.size() == 1 && it->m_unsubscribe_from_callback))
                 it->m_waiter.notify_all();
-            if (threads.empty() && it->m_unsubscribeFromCallback)
+            if (threads.empty() && it->m_unsubscribe_from_callback)
                 garbage.splice(garbage.begin(), m_list, it++);
             else
                 ++it;
@@ -104,7 +108,7 @@ public:
     std::size_t count() const { return m_list.size(); }
 
 private:
-    int m_nextId = 0;
+    int m_next_subscr_id = 0;
     std::list<subscription> m_list;
     std::mutex m_listMutex;
 };
@@ -120,7 +124,7 @@ int main() {
     verify(s.unsubscribe(id1));
     verify(s.count() == 0);
 
-    s.notify(); // nothing to notify
+    s.notify(); // it should be nothing to notify
 
     g_sync_logger() << "---- test2 ----";
 
