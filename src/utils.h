@@ -4,7 +4,10 @@
 #include <iomanip>
 #include <mutex>
 
-// The same as std::assert, but evaluates an expression even in release build mode
+#include <unistd.h>
+
+// The same as std::assert, but evaluates an expression even in release build
+// mode
 #define verify(expr) \
     do { \
         bool r = (expr); \
@@ -42,8 +45,11 @@ public:
     step_out operator()(bool add_endl = true) {
         ::timespec ts;
         ::clock_gettime(CLOCK_MONOTONIC, &ts);
+
         std::unique_lock l{m_mutex};
-        m_os << ts.tv_sec << '.' << std::setw(3) << std::setfill('0') << ts.tv_nsec / 1'000'000L << '\t';
+        m_os << std::dec << ts.tv_sec << '.'
+            << std::setw(3) << std::setfill('0') << ts.tv_nsec / 1'000'000L
+            << " [" << ::gettid() << "] ";
         return {std::move(l), m_os, add_endl};
     }
 
