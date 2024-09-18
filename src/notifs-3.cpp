@@ -170,9 +170,6 @@ protected:
             l.unlock();
 
             try {
-                // Note that no std::forward<> optimization here because
-                // arguments can't be forwarded into more than one subscriber -
-                // all but the first one will get giglets
                 (*ptr)(ctx, it->m_cb_storage);
             } catch (...) {
             }
