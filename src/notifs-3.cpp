@@ -70,7 +70,7 @@ struct cb_storage_ops {
 };
 
 template <>
-struct cb_storage_ops<false> {
+struct cb_storage_ops<true> {
     template <class T, class ... Args>
     static void init(cb_storage& s, T&& t) {
         typedef std::decay_t<T> T1;
