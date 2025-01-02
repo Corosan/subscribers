@@ -2,6 +2,7 @@
 
 #include <list>
 #include <functional>
+#include <algorithm>
 #include <shared_mutex>
 #include <atomic>
 #include <condition_variable>
